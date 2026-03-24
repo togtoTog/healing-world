@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import TimeSystem from './TimeSystem.js'
 import WalkControls from './WalkControls.js'
+import PlayerCharacter from './PlayerCharacter.js'
 
 /**
  * HealingWorld - 日系治愈风郊外场景
@@ -51,6 +52,7 @@ export default class HealingWorld
         this._buildStars()
         this._setupTimeSystem()
         this._setupWalkControls()
+        this._setupPlayerCharacter()
         this._setupIndoorTransition()
         this._setupAudio()
         this._setupHUD()
@@ -556,44 +558,42 @@ export default class HealingWorld
 
     _setupWalkControls()
     {
-        // 使用 firstPersonCamera 实例（由 Application 传入）的摄像机
-        // 但这里我们直接控制 Application.camera.instance 的位置（第三人称摄像机绕过）
-        // 为了简单，直接用 passes.renderPass.camera 的概念
-        // 创建步行摄像机
-        this._walkCamera = new THREE.PerspectiveCamera(
-            70,
-            this.sizes.viewport.width / this.sizes.viewport.height,
-            0.1,
-            200
-        )
-        this._walkCamera.up.set(0, 0, 1)
-        this.scene.add(this._walkCamera)
-
-        this.sizes.on('resize', () =>
-        {
-            this._walkCamera.aspect = this.sizes.viewport.width / this.sizes.viewport.height
-            this._walkCamera.updateProjectionMatrix()
-        })
-
         this.walkControls = new WalkControls({
             time:     this.time,
             sizes:    this.sizes,
             renderer: this.renderer,
             config:   this.config,
-            camera:   this._walkCamera,
+            // 摄像机由 PlayerCharacter 管理，WalkControls 只负责位置/朝向计算
+            // 传入一个 dummy camera，避免 WalkControls 内部报错
+            camera:   new THREE.PerspectiveCamera(),
         })
 
         // 添加小屋碰撞体
         this.walkControls.addCollider(this._houseAABB)
 
-        // 注入步行摄像机到 renderPass（覆盖第三人称）
-        if(this.passes && this.passes.renderPass)
-        {
-            this.passes.renderPass.camera = this._walkCamera
-        }
-
         // 提示 UI
         this._createWalkHint()
+    }
+
+    _setupPlayerCharacter()
+    {
+        this.player = new PlayerCharacter({
+            scene:    this.scene,
+            time:     this.time,
+            sizes:    this.sizes,
+            renderer: this.renderer,
+            passes:   this.passes,
+        })
+
+        // 初始化位置同步到 WalkControls 起始位置
+        const initPos = this.walkControls.position.clone()
+        this.player.sync(initPos, 0, false, 0)
+
+        // 把第三人称摄像机注入 renderPass（默认第三人称）
+        if(this.passes && this.passes.renderPass)
+        {
+            this.passes.renderPass.camera = this.player.thirdCamera
+        }
     }
 
     _createWalkHint()
@@ -788,6 +788,19 @@ export default class HealingWorld
 
     _onTick()
     {
+        // 同步玩家角色位置/朝向/动画
+        if(this.player && this.walkControls)
+        {
+            const pos     = this.walkControls.position
+            const yaw     = this.walkControls.yaw
+            const pitch   = this.walkControls.pitch || 0
+            const moving  = this.walkControls.keys
+                ? (this.walkControls.keys.forward || this.walkControls.keys.backward ||
+                   this.walkControls.keys.left    || this.walkControls.keys.right)
+                : false
+            this.player.sync(pos, yaw, moving, pitch)
+        }
+
         this._updateSakura()
         this._updateIndoorTransition()
         this._updateFadeMesh()
@@ -840,10 +853,11 @@ export default class HealingWorld
 
     _updateFadeMesh()
     {
-        if(!this._indoorFadeMesh || !this._walkCamera) return
+        const activeCam = this.player ? this.player.activeCamera : null
+        if(!this._indoorFadeMesh || !activeCam) return
 
         // 遮罩跟随摄像机，保持在视口近处
-        const cam = this._walkCamera
+        const cam = activeCam
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion)
         this._indoorFadeMesh.position.copy(cam.position).addScaledVector(forward, 0.5)
         this._indoorFadeMesh.quaternion.copy(cam.quaternion)

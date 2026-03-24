@@ -121,16 +121,12 @@ export default class Application
 
     /**
      * Set first person camera
+     * 注：治愈世界里视角切换由 PlayerCharacter 管理（V 键），此处不再初始化
      */
     setFirstPersonCamera()
     {
-        this.firstPersonCamera = new FirstPersonCamera({
-            time:     this.time,
-            sizes:    this.sizes,
-            renderer: this.renderer,
-            camera:   this.camera,
-            config:   this.config
-        })
+        // 已由 PlayerCharacter 接管，保留空方法避免报错
+        this.firstPersonCamera = null
     }
 
     setPasses()
