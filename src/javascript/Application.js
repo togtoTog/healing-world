@@ -7,7 +7,6 @@ import World from './World/index.js'
 import Resources from './Resources.js'
 import Camera from './Camera.js'
 import FirstPersonCamera from './FirstPersonCamera.js'
-import ThreejsJourney from './ThreejsJourney.js'
 
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
@@ -38,7 +37,6 @@ export default class Application
         this.setPasses()
         this.setWorld()
         this.setTitle()
-        this.setThreejsJourney()
     }
 
     /**
@@ -48,18 +46,16 @@ export default class Application
     {
         this.config = {}
         this.config.debug = window.location.hash === '#debug'
-        this.config.cyberTruck = window.location.hash === '#cybertruck'
         this.config.touch = false
 
         window.addEventListener('touchstart', () =>
         {
             this.config.touch = true
-            this.world.controls.setTouch()
-
-            this.passes.horizontalBlurPass.strength = 1
-            this.passes.horizontalBlurPass.material.uniforms.uStrength.value = new THREE.Vector2(this.passes.horizontalBlurPass.strength, 0)
-            this.passes.verticalBlurPass.strength = 1
-            this.passes.verticalBlurPass.material.uniforms.uStrength.value = new THREE.Vector2(0, this.passes.verticalBlurPass.strength)
+            // 治愈世界中 controls.setTouch 是空操作，不影响
+            if(this.world && this.world.controls)
+            {
+                this.world.controls.setTouch()
+            }
         }, { once: true })
     }
 
@@ -88,10 +84,8 @@ export default class Application
             alpha: true,
             powerPreference: 'high-performance'
         })
-        // this.renderer.setClearColor(0x414141, 1)
-        this.renderer.setClearColor(0x000000, 1)
-        // this.renderer.setPixelRatio(Math.min(Math.max(window.devicePixelRatio, 1.5), 2))
-        this.renderer.setPixelRatio(2)
+        this.renderer.setClearColor(0x87CEEB, 1)
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
         this.renderer.setSize(this.sizes.viewport.width, this.sizes.viewport.height)
         this.renderer.autoClear = false
 
@@ -117,13 +111,11 @@ export default class Application
 
         this.scene.add(this.camera.container)
 
+        // 在治愈世界中，不再跟踪小车；摄像机由 WalkControls 直接控制
+        // 下面的 tick 监听只是保留兼容性
         this.time.on('tick', () =>
         {
-            if(this.world && this.world.car)
-            {
-                this.camera.target.x = this.world.car.chassis.object.position.x
-                this.camera.target.y = this.world.car.chassis.object.position.y
-            }
+            // 治愈世界：不需要跟踪 car
         })
     }
 
@@ -149,58 +141,31 @@ export default class Application
         if(this.debug)
         {
             this.passes.debugFolder = this.debug.addFolder('postprocess')
-            // this.passes.debugFolder.open()
         }
 
         this.passes.composer = new EffectComposer(this.renderer)
 
-        // Create passes
-        // renderPass 摄像机会在 tick 里动态切换（第三/第一人称）
+        // renderPass 初始使用 camera.instance，world 创建后会被 WalkControls 更新为步行摄像机
         this.passes.renderPass = new RenderPass(this.scene, this.camera.instance)
 
         this.passes.horizontalBlurPass = new ShaderPass(BlurPass)
-        this.passes.horizontalBlurPass.strength = this.config.touch ? 0 : 1
+        this.passes.horizontalBlurPass.strength = this.config.touch ? 0 : 0
         this.passes.horizontalBlurPass.material.uniforms.uResolution.value = new THREE.Vector2(this.sizes.viewport.width, this.sizes.viewport.height)
-        this.passes.horizontalBlurPass.material.uniforms.uStrength.value = new THREE.Vector2(this.passes.horizontalBlurPass.strength, 0)
+        this.passes.horizontalBlurPass.material.uniforms.uStrength.value = new THREE.Vector2(0, 0)
 
         this.passes.verticalBlurPass = new ShaderPass(BlurPass)
-        this.passes.verticalBlurPass.strength = this.config.touch ? 0 : 1
+        this.passes.verticalBlurPass.strength = this.config.touch ? 0 : 0
         this.passes.verticalBlurPass.material.uniforms.uResolution.value = new THREE.Vector2(this.sizes.viewport.width, this.sizes.viewport.height)
-        this.passes.verticalBlurPass.material.uniforms.uStrength.value = new THREE.Vector2(0, this.passes.verticalBlurPass.strength)
+        this.passes.verticalBlurPass.material.uniforms.uStrength.value = new THREE.Vector2(0, 0)
 
-        // Debug
-        if(this.debug)
-        {
-            const folder = this.passes.debugFolder.addFolder('blur')
-            folder.open()
-
-            folder.add(this.passes.horizontalBlurPass.material.uniforms.uStrength.value, 'x').step(0.001).min(0).max(10)
-            folder.add(this.passes.verticalBlurPass.material.uniforms.uStrength.value, 'y').step(0.001).min(0).max(10)
-        }
-
+        // 治愈世界：使用淡暖色 glow
         this.passes.glowsPass = new ShaderPass(GlowsPass)
-        this.passes.glowsPass.color = '#ffcfe0'
-        this.passes.glowsPass.material.uniforms.uPosition.value = new THREE.Vector2(0, 0.25)
-        this.passes.glowsPass.material.uniforms.uRadius.value = 0.7
+        this.passes.glowsPass.color = '#ffe8d0'
+        this.passes.glowsPass.material.uniforms.uPosition.value = new THREE.Vector2(0.5, 0.8)
+        this.passes.glowsPass.material.uniforms.uRadius.value = 0.6
         this.passes.glowsPass.material.uniforms.uColor.value = new THREE.Color(this.passes.glowsPass.color)
         this.passes.glowsPass.material.uniforms.uColor.value.convertLinearToSRGB()
-        this.passes.glowsPass.material.uniforms.uAlpha.value = 0.55
-
-        // Debug
-        if(this.debug)
-        {
-            const folder = this.passes.debugFolder.addFolder('glows')
-            folder.open()
-
-            folder.add(this.passes.glowsPass.material.uniforms.uPosition.value, 'x').step(0.001).min(- 1).max(2).name('positionX')
-            folder.add(this.passes.glowsPass.material.uniforms.uPosition.value, 'y').step(0.001).min(- 1).max(2).name('positionY')
-            folder.add(this.passes.glowsPass.material.uniforms.uRadius, 'value').step(0.001).min(0).max(2).name('radius')
-            folder.addColor(this.passes.glowsPass, 'color').name('color').onChange(() =>
-            {
-                this.passes.glowsPass.material.uniforms.uColor.value = new THREE.Color(this.passes.glowsPass.color)
-            })
-            folder.add(this.passes.glowsPass.material.uniforms.uAlpha, 'value').step(0.001).min(0).max(1).name('alpha')
-        }
+        this.passes.glowsPass.material.uniforms.uAlpha.value = 0.18
 
         // Add passes
         this.passes.composer.addPass(this.passes.renderPass)
@@ -212,24 +177,12 @@ export default class Application
         this.time.on('tick', () =>
         {
             this.passes.horizontalBlurPass.enabled = this.passes.horizontalBlurPass.material.uniforms.uStrength.value.x > 0
-            this.passes.verticalBlurPass.enabled = this.passes.verticalBlurPass.material.uniforms.uStrength.value.y > 0
+            this.passes.verticalBlurPass.enabled   = this.passes.verticalBlurPass.material.uniforms.uStrength.value.y > 0
 
-            // 第一人称：同步摄像机位置并切换 renderPass 摄像机
-            if(this.firstPersonCamera && this.firstPersonCamera.active && this.world && this.world.car)
-            {
-                const chassis = this.world.car.chassis.object
-                this.firstPersonCamera.update(
-                    chassis.position,
-                    chassis.quaternion
-                )
-                this.passes.renderPass.camera = this.firstPersonCamera.instance
-            }
-            else if(this.passes.renderPass.camera !== this.camera.instance)
-            {
-                this.passes.renderPass.camera = this.camera.instance
-            }
+            // FirstPersonCamera V 键视角：WalkControls 管步行摄像机，FPS 相机是叠加的
+            // 在治愈世界里，我们始终使用步行摄像机（_walkCamera），不需要切换
+            // FirstPersonCamera 的 V 键功能被保留但不影响主渲染摄像机
 
-            // Renderer
             this.passes.composer.render()
         })
 
@@ -251,15 +204,15 @@ export default class Application
     setWorld()
     {
         this.world = new World({
-            config: this.config,
-            debug: this.debug,
+            config:   this.config,
+            debug:    this.debug,
             resources: this.resources,
-            time: this.time,
-            sizes: this.sizes,
-            camera: this.camera,
-            scene: this.scene,
+            time:     this.time,
+            sizes:    this.sizes,
+            camera:   this.camera,
+            scene:    this.scene,
             renderer: this.renderer,
-            passes: this.passes
+            passes:   this.passes
         })
         this.scene.add(this.world.container)
     }
@@ -269,44 +222,8 @@ export default class Application
      */
     setTitle()
     {
-        this.title = {}
-        this.title.frequency = 300
-        this.title.width = 20
-        this.title.position = 0
-        this.title.$element = document.querySelector('title')
-        this.title.absolutePosition = Math.round(this.title.width * 0.25)
-
-        this.time.on('tick', () =>
-        {
-            if(this.world.physics)
-            {
-                this.title.absolutePosition += this.world.physics.car.forwardSpeed
-
-                if(this.title.absolutePosition < 0)
-                {
-                    this.title.absolutePosition = 0
-                }
-            }
-        })
-
-        window.setInterval(() =>
-        {
-            this.title.position = Math.round(this.title.absolutePosition % this.title.width)
-
-            document.title = `${'_'.repeat(this.title.width - this.title.position)}🚗${'_'.repeat(this.title.position)}`
-        }, this.title.frequency)
-    }
-
-    /**
-     * Set Three.js Journey
-     */
-    setThreejsJourney()
-    {
-        this.threejsJourney = new ThreejsJourney({
-            config: this.config,
-            time: this.time,
-            world: this.world
-        })
+        // 治愈世界标题
+        document.title = '🌸 日系治愈小屋 🌸'
     }
 
     /**
@@ -316,9 +233,8 @@ export default class Application
     {
         this.time.off('tick')
         this.sizes.off('resize')
-
         this.camera.orbitControls.dispose()
         this.renderer.dispose()
-        this.debug.destroy()
+        if(this.debug) this.debug.destroy()
     }
 }
