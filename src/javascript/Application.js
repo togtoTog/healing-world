@@ -6,6 +6,7 @@ import Time from './Utils/Time.js'
 import World from './World/index.js'
 import Resources from './Resources.js'
 import Camera from './Camera.js'
+import FirstPersonCamera from './FirstPersonCamera.js'
 import ThreejsJourney from './ThreejsJourney.js'
 
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
@@ -33,6 +34,7 @@ export default class Application
         this.setDebug()
         this.setRenderer()
         this.setCamera()
+        this.setFirstPersonCamera()
         this.setPasses()
         this.setWorld()
         this.setTitle()
@@ -125,6 +127,20 @@ export default class Application
         })
     }
 
+    /**
+     * Set first person camera
+     */
+    setFirstPersonCamera()
+    {
+        this.firstPersonCamera = new FirstPersonCamera({
+            time:     this.time,
+            sizes:    this.sizes,
+            renderer: this.renderer,
+            camera:   this.camera,
+            config:   this.config
+        })
+    }
+
     setPasses()
     {
         this.passes = {}
@@ -139,6 +155,7 @@ export default class Application
         this.passes.composer = new EffectComposer(this.renderer)
 
         // Create passes
+        // renderPass 摄像机会在 tick 里动态切换（第三/第一人称）
         this.passes.renderPass = new RenderPass(this.scene, this.camera.instance)
 
         this.passes.horizontalBlurPass = new ShaderPass(BlurPass)
@@ -197,10 +214,23 @@ export default class Application
             this.passes.horizontalBlurPass.enabled = this.passes.horizontalBlurPass.material.uniforms.uStrength.value.x > 0
             this.passes.verticalBlurPass.enabled = this.passes.verticalBlurPass.material.uniforms.uStrength.value.y > 0
 
+            // 第一人称：同步摄像机位置并切换 renderPass 摄像机
+            if(this.firstPersonCamera && this.firstPersonCamera.active && this.world && this.world.car)
+            {
+                const chassis = this.world.car.chassis.object
+                this.firstPersonCamera.update(
+                    chassis.position,
+                    chassis.quaternion
+                )
+                this.passes.renderPass.camera = this.firstPersonCamera.instance
+            }
+            else if(this.passes.renderPass.camera !== this.camera.instance)
+            {
+                this.passes.renderPass.camera = this.camera.instance
+            }
+
             // Renderer
             this.passes.composer.render()
-            // this.renderer.domElement.style.background = 'black'
-            // this.renderer.render(this.scene, this.camera.instance)
         })
 
         // Resize event
