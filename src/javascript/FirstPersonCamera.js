@@ -31,8 +31,10 @@ export default class FirstPersonCamera
         )
         this.instance.up.set(0, 0, 1)
 
-        // 眼睛相对于车体中心的偏移（Z 轴向上，因为场景用 Z-up）
-        this.eyeOffset = new THREE.Vector3(0, 0, 1.2)
+        // 眼睛相对于车体中心的偏移（Z-up 坐标系）
+        // X=左右, Y=前后（正值=车头方向）, Z=上下
+        // 往前推到挡风玻璃处，稍微抬高视点
+        this.eyeOffset = new THREE.Vector3(0, 0.8, 1.4)
 
         // 视角旋转（水平 yaw，垂直 pitch）
         this.yaw   = 0
