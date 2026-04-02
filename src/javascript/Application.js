@@ -7,12 +7,17 @@ import World from './World/index.js'
 import Resources from './Resources.js'
 import Camera from './Camera.js'
 import FirstPersonCamera from './FirstPersonCamera.js'
+import PlacedObjects from './World/PlacedObjects.js'
+import PlaceMenu from './World/PlaceMenu.js'
 
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import BlurPass from './Passes/Blur.js'
 import GlowsPass from './Passes/Glows.js'
+
+// 引入放置菜单样式
+import '../style/place-menu.css'
 
 export default class Application
 {
@@ -36,6 +41,7 @@ export default class Application
         this.setFirstPersonCamera()
         this.setPasses()
         this.setWorld()
+        this.setPlacement()
         this.setTitle()
     }
 
@@ -211,6 +217,129 @@ export default class Application
             passes:   this.passes
         })
         this.scene.add(this.world.container)
+    }
+
+    /**
+     * Set placement system (Phase 2)
+     * 初始化 PlacedObjects 和 PlaceMenu，并连接 E 键 / 按钮交互
+     */
+    setPlacement()
+    {
+        // ── PlacedObjects ──────────────────────────────
+        // 获取活跃摄像机的函数（第一/第三人称动态切换）
+        const getActiveCamera = () =>
+        {
+            const player = this.world && this.world._healing && this.world._healing.player
+            if(player && player.activeCamera) return player.activeCamera
+            return this.camera.instance
+        }
+
+        this.placedObjects = new PlacedObjects({
+            scene:    this.scene,
+            camera:   getActiveCamera,   // 传入函数，支持动态切换
+            renderer: this.renderer,
+            sizes:    this.sizes,
+            time:     this.time,
+        })
+
+        // ── PlaceMenu ──────────────────────────────────
+        this.placeMenu = new PlaceMenu()
+
+        // ── 右下角「放置」触发按钮 ─────────────────────
+        const triggerBtn = document.createElement('button')
+        triggerBtn.id    = 'place-trigger-btn'
+        triggerBtn.title = '放置内容 (E)'
+        triggerBtn.textContent = '+'
+        document.body.appendChild(triggerBtn)
+
+        triggerBtn.addEventListener('click', () =>
+        {
+            this._togglePlaceMenu()
+        })
+
+        // ── E 键开关菜单 ───────────────────────────────
+        window.addEventListener('keydown', (e) =>
+        {
+            // 如果焦点在输入框内，不拦截 E 键
+            const tag = document.activeElement && document.activeElement.tagName
+            if(tag === 'INPUT' || tag === 'TEXTAREA') return
+
+            if(e.key === 'e' || e.key === 'E')
+            {
+                e.preventDefault()
+                this._togglePlaceMenu()
+            }
+        })
+
+        // ── 监听 place-object 事件执行放置 ────────────
+        window.addEventListener('place-object', (e) =>
+        {
+            const { type, data, position } = e.detail
+            this._placeObject(type, data, position)
+        })
+    }
+
+    /**
+     * 切换放置菜单
+     */
+    _togglePlaceMenu()
+    {
+        const targetPos = this._getPlacementPosition()
+        this.placeMenu.toggle(targetPos)
+    }
+
+    /**
+     * 计算玩家前方 5 单位的放置坐标
+     */
+    _getPlacementPosition()
+    {
+        const player = this.world && this.world._healing && this.world._healing.player
+        const walkControls = this.world && this.world._healing && this.world._healing.walkControls
+
+        if(player && walkControls)
+        {
+            const pos = walkControls.position.clone()
+            const yaw = walkControls.yaw || 0
+
+            // 玩家前方方向（Z-up 坐标系，yaw 绕 Z 轴）
+            const forward = new THREE.Vector3(
+                Math.sin(yaw),
+                Math.cos(yaw),
+                0
+            )
+            pos.addScaledVector(forward, 5)
+            pos.z += 1.2  // 稍微抬高，放到视线高度
+            return pos
+        }
+
+        // fallback：摄像机前方
+        const cam = this.passes.renderPass.camera
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion)
+        return cam.position.clone().addScaledVector(dir, 5)
+    }
+
+    /**
+     * 执行放置动作
+     */
+    _placeObject(type, data, position)
+    {
+        switch(type)
+        {
+            case 'text':
+                this.placedObjects.addText(data.text, position)
+                break
+            case 'image':
+                this.placedObjects.addImage(data.url, position)
+                break
+            case 'video':
+                this.placedObjects.addVideo(data.url, position)
+                break
+            case 'model':
+                this.placedObjects.addModel(position, data.modelName)
+                break
+            default:
+                console.warn('[Application] 未知放置类型:', type)
+        }
     }
 
     /**
